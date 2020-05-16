@@ -19,20 +19,19 @@ namespace Cards
          
          TODO:
          
-         * Declaring winner doesn't give pending pot?
+         DONE * Declaring winner doesn't give pending pot?
          * Raising doesn't set to-bet well
          * Blind indicators
-         * Server folding doesn't AdvancePlayer
-         * Server reseting bet creates money
-         * Can't show cards when Folded
-         * Show all 
+         DONE * Server folding doesn't AdvancePlayer
+         DONE * Server reseting bet creates money
+         DONE * Can't show cards when Folded 
          * First player should reset each round to Dealer + 1
          * Ensure everyone is added up before letting a deal go through
-         * Client pending bets don't sync?
+         DONE * Client pending bets don't sync?
          * Dealer == Marque? BIGGER NOTICE EITHER WAY
          * Background of player who's up
-         * Out of 0 still gets dealer?
-         * Desync pending bet from clients? when server is dealing?
+         DONE * Out of 0 still gets dealer?
+         DONE * Desync pending bet from clients? when server is dealing?
          * Night mode
          * Undo rotations
          
@@ -143,7 +142,7 @@ namespace Cards
             const string nameKey = "-n";
             const string connectKey = "-c";
 
-            ServerAddress = "2015";
+            ServerAddress = "127.0.0.1:2015";
             PlayerName = "foo";
 
             if (cmdArgs.ContainsKey(nameKey))
@@ -223,20 +222,24 @@ namespace Cards
             ServerLogger?.Log(GetCurrentGameStateAsString());
         }
 
-        public void AdvanceFlop()
+        private void CommitAllBets()
         {
-            LogGameState();
-
             foreach (var player in GetAllPlayers())
             {
                 player.PlaceBet(true);
             }
 
             this.Pot = GetAllPlayers().Select(p => p.BetForGame).Sum();
+            this.PendingPot = 0;
+        }
+
+        public void AdvanceFlop()
+        {
+            LogGameState();
+
+            CommitAllBets();
 
             var newFlop = Flop;
-
-            this.PendingPot = 0;
 
             if (Flop.Count == 1)
             {
@@ -464,7 +467,7 @@ namespace Cards
 
             foreach (var player in GetAllPlayers())
             {
-                if (toSet)
+                if (toSet && !player.IsOut)
                 {
                     player.IsDealer = true;
                     didSet = true;
@@ -479,8 +482,18 @@ namespace Cards
 
             if (!didSet && toSet)
             {
-                FirstPlayer.IsDealer = true;
+                foreach (var player in GetAllPlayers())
+                {
+                    if (!player.IsOut)
+                    {
+                        player.IsDealer = true;
+                        break;
+                    }
+                }
             }
+
+            // If we are the server, this will push updated state to cilents
+            SendUpdatedGameState();
         }
 
         public void UpdatePlayer(Player player)
@@ -532,19 +545,9 @@ namespace Cards
             return allPlayers.Where(pl => !pl.IsFake || includeFakes);
         }
 
-        public void WeGottaWinner(string winningUuid)
-        {
-            if (this.IsServer)
-            {
-                var winningGuid = Guid.Parse(winningUuid);
-                var winner = GetPlayer(winningGuid);
-                winner.Points += this.Pot;
-                PassDealer_Click(null, null);
-            }
-        }
-
         public void PlayerJoin(string name, Guid uuid)
         {
+
             foreach (var player in GetAllPlayers(true))
             {
                 if (player.IsFake)
@@ -584,6 +587,7 @@ namespace Cards
                     var winner = GetPlayer(winnerUuid);
                     if (!winner.IsFake)
                     {
+                        CommitAllBets();
                         winner.Points += this.Pot;
                         PassDealer_Click(null, null);
                     }
@@ -678,10 +682,10 @@ namespace Cards
             FirstPlayer.IsDealer = true;
             FirstPlayer.IsMyTurn = true;
 
+            ResetHand_Click(null, null);
+
             // Pass off to small blind
             AdvanceTurn();
-
-            ResetHand_Click(null, null);
         }
 
         private void Bet1_Click(object sender, RoutedEventArgs e)
@@ -722,6 +726,9 @@ namespace Cards
                 }
 
                 FirstPlayer.BetForRound = 0;
+
+                // If we are the server, this will push updated state to cilents
+                SendUpdatedGameState();
             }
         }
 
@@ -774,17 +781,20 @@ namespace Cards
                     }
                 }
             }
+
+            // If we are the server, this will push updated state to cilents
+            SendUpdatedGameState();
         }
 
         private void PassDealer_Click(object sender, RoutedEventArgs e)
         {
-            AdvanceDealer();
             ResetHand_Click(null, null);
+            AdvanceDealer();
         }
 
         private void JoinClick(object sender, RoutedEventArgs e)
         {
-            Client = new Client(HandleMessage);
+            Client = new Client(ClientHandleMessage);
 
             this.Title += " (Client)";
 
@@ -799,14 +809,8 @@ namespace Cards
                 var newMessage = new Message() { Type = MessageType.Join, Value = PlayerName, Uuid = MyUuid };
                 var srl = JsonConvert.SerializeObject(newMessage);
 
-                Client.Send(srl + (char)Constants.EOF);
+                Client.Send(srl);
                 Console.WriteLine("Sent");
-
-                UpdateTimer = new Timer(TimeSpan.FromSeconds(2).TotalMilliseconds);
-                UpdateTimer.Elapsed += UpdateTimer_Elapsed;
-                UpdateTimer.AutoReset = true;
-                UpdateTimer.Enabled = true;
-                UpdateTimer.Start();
             }
             else
             {
@@ -817,104 +821,145 @@ namespace Cards
             InGame = true;
         }
 
-        private void UpdateTimer_Elapsed(object sender, ElapsedEventArgs e)
-        {
-            Refresh_Click(null, null);
-        }
-
-        bool HandleMessage(string messageStr)
+        bool ClientHandleMessage(string messageStr)
         {
             return Dispatcher.Invoke(new Func<bool>(() =>
             {
                 if (this.IsServer)
                 {
-                    var message = JsonConvert.DeserializeObject<Message>(messageStr);
-
-                    switch (message.Type)
-                    {
-                        case MessageType.PollState:
-                        default:
-                            break;
-                        case MessageType.DeclareWinner:
-                            HandleDeclareWinner(message.Uuid, message.Value);
-                            break;
-                        case MessageType.Join:
-                            PlayerJoin(message.Value, message.Uuid);
-                            break;
-                        case MessageType.Bet:
-                            PlayerBet(message.Value, message.Uuid);
-                            break;
-                        case MessageType.AdvanceFlop:
-                            var player = GetPlayer(message.Uuid);
-                            if (player.IsDealer)
-                            {
-                                AdvanceFlop();
-                            }
-                            break;
-                        case MessageType.Fold:
-                        case MessageType.ShowHand:
-                            PlayerAct(message.Type, message.Uuid);
-                            break;
-
-                    }
+                    // Noop
                 }
                 else
                 {
-                    var gamestate = JsonConvert.DeserializeObject<GameState>(messageStr);
-
-                    this.Flop = gamestate.Flop != null ? new ObservableCollection<Card>(gamestate.Flop) : null;
-
-                    this.Pot = gamestate.Pot;
-                    this.PendingPot = gamestate.PendingPot;
-
-                    var idxOff = 0;
-
-                    foreach (var player in gamestate.Players)
+                    try
                     {
-                        if (player.Uuid == MyUuid)
+                        var serverMessage = JsonConvert.DeserializeObject<ServerMessage>(messageStr);
+
+                        switch (serverMessage.Type)
                         {
-                            idxOff = 1 - player.Index;
-                            player.ShowHand();
-                        }
-                        else if (!player.IsShowingHand)
-                        {
-                            player.HideHand();
+                            default:
+                            case ServerMessageType.Ack:
+                                break;
+                            case ServerMessageType.Update:
+                                var gamestate = JsonConvert.DeserializeObject<GameState>(serverMessage.Value);
+
+                                this.Flop = gamestate.Flop != null ? new ObservableCollection<Card>(gamestate.Flop) : null;
+
+                                this.Pot = gamestate.Pot;
+                                this.PendingPot = gamestate.PendingPot;
+
+                                var idxOff = 0;
+
+                                foreach (var player in gamestate.Players)
+                                {
+                                    if (player.Uuid == MyUuid)
+                                    {
+                                        idxOff = 1 - player.Index;
+                                        player.ShowHand();
+                                    }
+                                    else if (!player.IsShowingHand)
+                                    {
+                                        player.HideHand();
+                                    }
+                                }
+
+                                foreach (var player in gamestate.Players)
+                                {
+                                    var tempIdx = (player.Index + idxOff);
+                                    if (tempIdx <= 0)
+                                    {
+                                        tempIdx += gamestate.Players.Length;
+                                    }
+
+                                    player.Index = tempIdx;
+
+                                    // Don't overwrite my pending state if it's my turn, unless we're in a new round
+                                    if (player.Uuid == MyUuid && player.IsMyTurn && gamestate.Round <= lastGameState.Round && gamestate.Pot == lastGameState.Pot)
+                                    {
+                                        player.BetForRound = FirstPlayer.BetForRound;
+                                    }
+
+                                    player.IsMe = player.Uuid == MyUuid;
+
+                                    UpdatePlayer(player);
+                                }
+
+                                lastGameState = gamestate;
+                                break;
                         }
                     }
-
-                    foreach (var player in gamestate.Players)
-                    {
-                        var tempIdx = (player.Index + idxOff);
-                        if (tempIdx <= 0)
-                        {
-                            tempIdx += gamestate.Players.Length;
-                        }
-
-                        player.Index = tempIdx;
-
-                        // Don't overwrite my pending state if it's my turn, unless we're in a new round
-                        if (player.Uuid == MyUuid && player.IsMyTurn && gamestate.Round <= lastGameState.Round && gamestate.Pot == lastGameState.Pot)
-                        {
-                            player.BetForRound = FirstPlayer.BetForRound;
-                        }
-
-                        player.IsMe = player.Uuid == MyUuid;
-
-                        UpdatePlayer(player);
-                    }
-
-                    lastGameState = gamestate;
+                    catch { }
                 }
 
                 return true;
 
             }));
+        }
 
-            Console.WriteLine(messageStr);
+        bool ServerHandleMessage(string messageStr)
+        {
+            return Dispatcher.Invoke(new Func<bool>(() =>
+            {
+                if (this.IsServer)
+                {
+                    try {
+                        var message = JsonConvert.DeserializeObject<Message>(messageStr);
+
+                        switch (message.Type)
+                        {
+                            case MessageType.PollState:
+                            default:
+                                break;
+                            case MessageType.DeclareWinner:
+                                HandleDeclareWinner(message.Uuid, message.Value);
+                                break;
+                            case MessageType.Join:
+                                PlayerJoin(message.Value, message.Uuid);
+                                break;
+                            case MessageType.Bet:
+                                PlayerBet(message.Value, message.Uuid);
+                                break;
+                            case MessageType.AdvanceFlop:
+                                var player = GetPlayer(message.Uuid);
+                                if (player.IsDealer)
+                                {
+                                    AdvanceFlop();
+                                }
+                                break;
+                            case MessageType.Fold:
+                            case MessageType.ShowHand:
+                                PlayerAct(message.Type, message.Uuid);
+                                break;
+                        }
+
+                        SendUpdatedGameState();
+                    }
+                    catch
+                    {
+                        // TODO: error handling hehe
+                    }
+                }
+                else
+                {
+                    //no op
+                }
+
+                return true;
+
+            }));
         }
 
         private void HostClick(object sender, RoutedEventArgs e)
         {
+#if DEBUG
+            // handle default value of 127.0.0.0:1000 for easy testing
+            if (ServerAddress.Contains(':'))
+            {
+                ServerAddress = ServerAddress.Split(':')[1];
+            }
+
+#endif
+
             if (!int.TryParse(ServerAddress, out int port))
             {
                 return;
@@ -926,7 +971,7 @@ namespace Cards
 
             Task.Factory.StartNew(() =>
             {
-                Server = new Server(HandleMessage, GetCurrentGameStateAsString);
+                Server = new Server(ServerHandleMessage, GetAcknowledgementResponseAsString);
                 Server.StartListening(port);
             });
 
@@ -942,6 +987,7 @@ namespace Cards
                 if (this.IsServer)
                 {
                     AdvanceFlop();
+                    SendUpdatedGameState();
                 }
                 else
                 {
@@ -950,7 +996,7 @@ namespace Cards
                         var newMessage = new Message() { Type = MessageType.AdvanceFlop, Value = string.Empty, Uuid = MyUuid };
                         var srl = JsonConvert.SerializeObject(newMessage);
 
-                        Client.Send(srl + (char)Constants.EOF);
+                        Client.Send(srl);
                         Console.WriteLine("Flop");
                     }));
                 }
@@ -979,6 +1025,7 @@ namespace Cards
 
                 IsAdmining = false;
                 InGame = true;
+                SendUpdatedGameState();
             }
             catch { }
         }
@@ -996,6 +1043,7 @@ namespace Cards
                 if (this.IsServer)
                 {
                     FirstPlayer.IsOut = true;
+                    AdvanceTurn();
                 }
                 else
                 {
@@ -1007,7 +1055,7 @@ namespace Cards
                         var newMessage = new Message() { Type = MessageType.Fold, Value = string.Empty, Uuid = MyUuid };
                         var srl = JsonConvert.SerializeObject(newMessage);
 
-                        Client.Send(srl + (char)Constants.EOF);
+                        Client.Send(srl);
                         Console.WriteLine("Fold");
                     }));
                 }
@@ -1031,6 +1079,7 @@ namespace Cards
             if (this.IsServer)
             {
                 FirstPlayer.IsShowingHand = true;
+                SendUpdatedGameState();
             }
             else
             {
@@ -1039,10 +1088,20 @@ namespace Cards
                     var newMessage = new Message() { Type = MessageType.ShowHand, Value = string.Empty, Uuid = MyUuid };
                     var srl = JsonConvert.SerializeObject(newMessage);
 
-                    Client.Send(srl + (char)Constants.EOF);
+                    Client.Send(srl);
                     Console.WriteLine("Show");
                 }));
             }
+        }
+
+        private string GetAcknowledgementResponseAsString()
+        {
+            var ackMsg = new ServerMessage()
+            {
+                Type = ServerMessageType.Ack
+            };
+
+            return JsonConvert.SerializeObject(ackMsg);
         }
 
         private string GetCurrentGameStateAsString()
@@ -1091,7 +1150,7 @@ namespace Cards
                     var newMessage = new Message() { Type = MessageType.PollState, Value = PlayerName, Uuid = MyUuid };
                     var srl = JsonConvert.SerializeObject(newMessage);
 
-                    Client.Send(srl + (char)Constants.EOF);
+                    Client.Send(srl);
                     Console.WriteLine("Poll state");
                 }));
             }
@@ -1106,7 +1165,7 @@ namespace Cards
                     var newMessage = new Message() { Type = MessageType.Leave, Value = PlayerName, Uuid = MyUuid };
                     var srl = JsonConvert.SerializeObject(newMessage);
 
-                    Client.Send(srl + (char)Constants.EOF);
+                    Client.Send(srl);
                     Console.WriteLine("Leaving");
                 }
             }));
@@ -1126,6 +1185,7 @@ namespace Cards
                     }
 
                     AdvanceTurn();
+
                     //PlayerBet(FirstPlayer.BetForRound.ToString(), MyUuid);
                 }
                 else
@@ -1139,7 +1199,7 @@ namespace Cards
                         var newMessage = new Message() { Type = MessageType.Bet, Value = FirstPlayer.BetForRound.ToString(), Uuid = MyUuid };
                         var srl = JsonConvert.SerializeObject(newMessage);
 
-                        Client.Send(srl + (char)Constants.EOF);
+                        Client.Send(srl);
                         Console.WriteLine("Bet");
                     }));
                 }
@@ -1150,6 +1210,7 @@ namespace Cards
         {
             if (this.IsServer && !SixthPlayer.IsFake)
             {
+                CommitAllBets();
                 SixthPlayer.Points += this.Pot;
                 PassDealer_Click(null, null);
             }
@@ -1160,7 +1221,7 @@ namespace Cards
                     var newMessage = new Message() { Type = MessageType.DeclareWinner, Value = SixthPlayer.Uuid.ToString(), Uuid = MyUuid };
                     var srl = JsonConvert.SerializeObject(newMessage);
 
-                    Client.Send(srl + (char)Constants.EOF);
+                    Client.Send(srl);
                     Console.WriteLine("Winner");
                 }));
             }
@@ -1170,6 +1231,7 @@ namespace Cards
         {
             if (this.IsServer && !FifthPlayer.IsFake)
             {
+                CommitAllBets();
                 FifthPlayer.Points += this.Pot;
                 PassDealer_Click(null, null);
             }
@@ -1180,7 +1242,7 @@ namespace Cards
                     var newMessage = new Message() { Type = MessageType.DeclareWinner, Value = FifthPlayer.Uuid.ToString(), Uuid = MyUuid };
                     var srl = JsonConvert.SerializeObject(newMessage);
 
-                    Client.Send(srl + (char)Constants.EOF);
+                    Client.Send(srl);
                     Console.WriteLine("Winner");
                 }));
             }
@@ -1190,6 +1252,7 @@ namespace Cards
         {
             if (this.IsServer && !FourthPlayer.IsFake)
             {
+                CommitAllBets();
                 FourthPlayer.Points += this.Pot;
                 PassDealer_Click(null, null);
             }
@@ -1200,7 +1263,7 @@ namespace Cards
                     var newMessage = new Message() { Type = MessageType.DeclareWinner, Value = FourthPlayer.Uuid.ToString(), Uuid = MyUuid };
                     var srl = JsonConvert.SerializeObject(newMessage);
 
-                    Client.Send(srl + (char)Constants.EOF);
+                    Client.Send(srl);
                     Console.WriteLine("Winner");
                 }));
             }
@@ -1210,6 +1273,7 @@ namespace Cards
         {
             if (this.IsServer && !ThirdPlayer.IsFake)
             {
+                CommitAllBets();
                 ThirdPlayer.Points += this.Pot;
                 PassDealer_Click(null, null);
             }
@@ -1220,7 +1284,7 @@ namespace Cards
                     var newMessage = new Message() { Type = MessageType.DeclareWinner, Value = ThirdPlayer.Uuid.ToString(), Uuid = MyUuid };
                     var srl = JsonConvert.SerializeObject(newMessage);
 
-                    Client.Send(srl + (char)Constants.EOF);
+                    Client.Send(srl);
                     Console.WriteLine("Winner");
                 }));
             }
@@ -1230,6 +1294,7 @@ namespace Cards
         {
             if (this.IsServer && !SecondPlayer.IsFake)
             {
+                CommitAllBets();
                 SecondPlayer.Points += this.Pot;
                 PassDealer_Click(null, null);
             }
@@ -1240,7 +1305,7 @@ namespace Cards
                     var newMessage = new Message() { Type = MessageType.DeclareWinner, Value = SecondPlayer.Uuid.ToString(), Uuid = MyUuid };
                     var srl = JsonConvert.SerializeObject(newMessage);
 
-                    Client.Send(srl + (char)Constants.EOF);
+                    Client.Send(srl);
                     Console.WriteLine("Winner");
                 }));
             }
@@ -1250,6 +1315,7 @@ namespace Cards
         {
             if (this.IsServer && !FirstPlayer.IsFake)
             {
+                CommitAllBets();
                 FirstPlayer.Points += this.Pot;
                 PassDealer_Click(null, null);
             }
@@ -1260,7 +1326,7 @@ namespace Cards
                     var newMessage = new Message() { Type = MessageType.DeclareWinner, Value = FirstPlayer.Uuid.ToString(), Uuid = MyUuid };
                     var srl = JsonConvert.SerializeObject(newMessage);
 
-                    Client.Send(srl + (char)Constants.EOF);
+                    Client.Send(srl);
                     Console.WriteLine("Winner");
                 }));
             }
@@ -1290,6 +1356,7 @@ namespace Cards
                 this.Pot = GetAllPlayers().Select(p => p.BetForGame).Sum();
                 IsAdmining = false;
                 InGame = true;
+                SendUpdatedGameState();
             }
             catch { }
         }
@@ -1314,8 +1381,25 @@ namespace Cards
 
                 IsAdmining = false;
                 InGame = true;
+                SendUpdatedGameState();
             }
             catch { }
+        }
+
+        private void SendUpdatedGameState()
+        {
+            if (this.IsServer)
+            {
+                var gameStateMessage = new ServerMessage()
+                {
+                    Type = ServerMessageType.Update,
+                    Value = GetCurrentGameStateAsString()
+                };
+
+                var serializedStateMessage = JsonConvert.SerializeObject(gameStateMessage);
+
+                this.Server.PushToListeners(serializedStateMessage);
+            }
         }
     }
 }
