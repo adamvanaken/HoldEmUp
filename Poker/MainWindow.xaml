@@ -213,10 +213,10 @@
                     <Button Content="Place Bet" Click="PlaceBet_Click"/>
                 </StackPanel>
 
-                <StackPanel Grid.Column="1" Margin="5" DataContext="{Binding Path=FirstPlayer, ElementName=root}" IsEnabled="{Binding IsOut, Converter={StaticResource BoolInvConverter}}" >
-                    <Button Content="Check/Call" Click="Check_Click"/>
-                    <Button Margin="0 5" Content="Fold" Click="Fold_Click" />
-                    <Button Content="All In" Click="AllIn_Click"/>
+                <StackPanel Grid.Column="1" Margin="5">
+                    <Button Content="Check/Call" Click="Check_Click" DataContext="{Binding Path=FirstPlayer, ElementName=root}" IsEnabled="{Binding IsOut, Converter={StaticResource BoolInvConverter}}"/>
+                    <Button Margin="0 5" Content="Fold" Click="Fold_Click" DataContext="{Binding Path=FirstPlayer, ElementName=root}" IsEnabled="{Binding IsOut, Converter={StaticResource BoolInvConverter}}" />
+                    <Button Content="All In" Click="AllIn_Click" DataContext="{Binding Path=FirstPlayer, ElementName=root}" IsEnabled="{Binding IsOut, Converter={StaticResource BoolInvConverter}}"/>
                     <Button Margin="0 5 0 0" Content="Show Hand" Click="ShowHand_Click"/>
                 </StackPanel>
 
