@@ -3,12 +3,18 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Poker - By Adam"
         Height="800"
-        Width="1100" Name="root" Closing="root_Closing">
+        xmlns:convert="clr-namespace:Solitare.Converters"
+    Width="1100" Name="root" Closing="root_Closing">
     <Window.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Views/PlayerView.xaml"/>
                 <ResourceDictionary Source="Views/CardView.xaml"/>
+
+                <ResourceDictionary>
+                    <convert:RotationConverter x:Key="RotationConverter"/>
+                </ResourceDictionary>
+
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Window.Resources>
@@ -115,6 +121,13 @@
                                 </Style>
                             </MenuItem.Style>
                         </MenuItem>
+                        <MenuItem Header="Toggle Player Rotations">
+                            <MenuItem.Style>
+                                <Style TargetType="MenuItem">
+                                    <EventSetter Event="Click" Handler="ToggleRotation_Click"/>
+                                </Style>
+                            </MenuItem.Style>
+                        </MenuItem>
                     </MenuItem>
                 </Menu>
             </DockPanel>
@@ -139,46 +152,6 @@
                 </StackPanel>
             </StackPanel>
 
-            <!-- 4th player -->
-            <ContentControl RenderTransformOrigin="0.5,0.5" Grid.Column="1" Grid.Row="1" 
-                            Content="{Binding FourthPlayer, ElementName=root}"
-                            ContentTemplate="{StaticResource PlayerTemplate}"
-                            Margin="5">
-                <ContentControl.RenderTransform>
-                    <RotateTransform Angle="180"/>
-                </ContentControl.RenderTransform>
-            </ContentControl>
-
-            <!-- 5th player -->
-            <ContentControl RenderTransformOrigin="0.5,0.5" Grid.Column="2" Grid.Row="1" 
-                            Content="{Binding FifthPlayer, ElementName=root}"
-                            ContentTemplate="{StaticResource PlayerTemplate}"
-                            Margin="5">
-                <ContentControl.RenderTransform>
-                    <RotateTransform Angle="180"/>
-                </ContentControl.RenderTransform>
-            </ContentControl>
-
-            <!-- 3rd player -->
-            <ContentControl RenderTransformOrigin="0.5,0.5" Grid.Column="0" Grid.Row="2" 
-                            Content="{Binding ThirdPlayer, ElementName=root}"
-                            ContentTemplate="{StaticResource PlayerTemplate}"
-                            Margin="5">
-                <ContentControl.RenderTransform>
-                    <RotateTransform Angle="90"/>
-                </ContentControl.RenderTransform>
-            </ContentControl>
-
-            <!-- 6th player -->
-            <ContentControl RenderTransformOrigin="0.5,0.5" Grid.Column="3" Grid.Row="2" 
-                            Content="{Binding SixthPlayer, ElementName=root}"
-                            ContentTemplate="{StaticResource PlayerTemplate}"
-                            Margin="5">
-                <ContentControl.RenderTransform>
-                    <RotateTransform Angle="270"/>
-                </ContentControl.RenderTransform>
-            </ContentControl>
-
             <!-- 1st player -->
             <ContentControl Grid.Column="2" Grid.Row="3" 
                             Content="{Binding FirstPlayer, ElementName=root}"
@@ -191,6 +164,46 @@
                             Content="{Binding SecondPlayer, ElementName=root}"
                             ContentTemplate="{StaticResource PlayerTemplate}"
                             Margin="5">
+            </ContentControl>
+
+            <!-- 3rd player -->
+            <ContentControl RenderTransformOrigin="0.5,0.5" Grid.Column="0" Grid.Row="2" 
+                            Content="{Binding ThirdPlayer, ElementName=root}"
+                            ContentTemplate="{StaticResource PlayerTemplate}"
+                            Margin="5">
+                <ContentControl.RenderTransform>
+                    <RotateTransform Angle="{Binding RotationState, ElementName=root, Converter={StaticResource RotationConverter}, ConverterParameter=90}"/>
+                </ContentControl.RenderTransform>
+            </ContentControl>
+
+            <!-- 4th player -->
+            <ContentControl RenderTransformOrigin="0.5,0.5" Grid.Column="1" Grid.Row="1" 
+                            Content="{Binding FourthPlayer, ElementName=root}"
+                            ContentTemplate="{StaticResource PlayerTemplate}"
+                            Margin="5">
+                <ContentControl.RenderTransform>
+                    <RotateTransform Angle="{Binding RotationState, ElementName=root, Converter={StaticResource RotationConverter}, ConverterParameter=180}"/>
+                </ContentControl.RenderTransform>
+            </ContentControl>
+
+            <!-- 5th player -->
+            <ContentControl RenderTransformOrigin="0.5,0.5" Grid.Column="2" Grid.Row="1" 
+                            Content="{Binding FifthPlayer, ElementName=root}"
+                            ContentTemplate="{StaticResource PlayerTemplate}"
+                            Margin="5">
+                <ContentControl.RenderTransform>
+                    <RotateTransform Angle="{Binding RotationState, ElementName=root, Converter={StaticResource RotationConverter}, ConverterParameter=180}"/>
+                </ContentControl.RenderTransform>
+            </ContentControl>
+
+            <!-- 6th player -->
+            <ContentControl RenderTransformOrigin="0.5,0.5" Grid.Column="3" Grid.Row="2" 
+                            Content="{Binding SixthPlayer, ElementName=root}"
+                            ContentTemplate="{StaticResource PlayerTemplate}"
+                            Margin="5">
+                <ContentControl.RenderTransform>
+                    <RotateTransform Angle="{Binding RotationState, ElementName=root, Converter={StaticResource RotationConverter}, ConverterParameter=270}"/>
+                </ContentControl.RenderTransform>
             </ContentControl>
 
             <!-- Betting -->

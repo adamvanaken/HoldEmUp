@@ -9,7 +9,7 @@ using System.Windows.Data;
 
 namespace Solitare.Converters
 {
-    public sealed class BoolInvConverter : IValueConverter
+    public sealed class RotationConverter : IValueConverter
     {
         /// <summary>
         /// Convert bool or Nullable bool to Visibility
@@ -21,17 +21,35 @@ namespace Solitare.Converters
         /// <returns>Visible or Collapsed</returns>
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            bool bValue = false;
-            if (value is bool)
+            var rotation = 0;
+            try
             {
-                bValue = (bool)value;
+                if (int.TryParse(parameter as string, out int paramInt))
+                {
+                    rotation = paramInt;
+
+                    if (Enum.TryParse(value.ToString(), out PlayerRotationState state))
+                    {
+                        switch (state)
+                        {
+                            case PlayerRotationState.All:
+                                return rotation;
+                            case PlayerRotationState.None:
+                                return 0;
+                            case PlayerRotationState.Sides:
+                                // For the sides, don't rotation the 180 cases
+                                if (rotation % 180 == 0)
+                                {
+                                    return 0;
+                                }
+                                return rotation;
+                        }
+                    }
+                }
             }
-            else if (value is Nullable<bool>)
-            {
-                Nullable<bool> tmp = (Nullable<bool>)value;
-                bValue = tmp.HasValue ? tmp.Value : false;
-            }
-            return !bValue;           
+            catch { }
+
+            return rotation;
         }
 
         /// <summary>

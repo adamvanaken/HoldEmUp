@@ -46,6 +46,7 @@ namespace Cards
         #region Constants and Fields
 
         GameState lastGameState;
+        Settings _savedSettings;
 
         /// <summary>
         /// The DependencyProperty that backs the Stack property.
@@ -62,6 +63,9 @@ namespace Cards
             "FifthPlayer", typeof(Player), typeof(MainWindow), new FrameworkPropertyMetadata(null));
         public static readonly DependencyProperty Player6Property = DependencyProperty.Register(
             "SixthPlayer", typeof(Player), typeof(MainWindow), new FrameworkPropertyMetadata(null));
+
+        public static readonly DependencyProperty RotationProperty = DependencyProperty.Register(
+           "RotationState", typeof(PlayerRotationState), typeof(MainWindow), new FrameworkPropertyMetadata(null));
 
         public static readonly DependencyProperty FlopProp = DependencyProperty.Register(
             "Flop", typeof(ObservableCollection<Card>), typeof(MainWindow), new FrameworkPropertyMetadata(null));
@@ -119,6 +123,15 @@ namespace Cards
             FourthPlayer = new Player(4);
             FifthPlayer = new Player(5);
             SixthPlayer = new Player(6);
+
+            _savedSettings = Settings.Load();
+
+            if (_savedSettings != null)
+            {
+                PlayerName = _savedSettings.LastUsedName;
+                ServerAddress = _savedSettings.LastUsedServer;
+                RotationState = _savedSettings.Rotation;
+            }
 
             Pot = 0;
             PendingPot = 0;
@@ -272,6 +285,18 @@ namespace Cards
             set
             {
                 SetValue(FlopProp, value);
+            }
+        }
+
+        public PlayerRotationState RotationState
+        {
+            get
+            {
+                return (PlayerRotationState)GetValue(RotationProperty);
+            }
+            set
+            {
+                SetValue(RotationProperty, value);
             }
         }
 
@@ -794,6 +819,18 @@ namespace Cards
 
         private void JoinClick(object sender, RoutedEventArgs e)
         {
+            if (sender != null)
+            {
+                _savedSettings = new Settings()
+                {
+                    LastUsedName = PlayerName,
+                    LastUsedServer = ServerAddress,
+                    Rotation = _savedSettings?.Rotation ?? PlayerRotationState.All
+                };
+
+                Settings.Save(_savedSettings);
+            }
+
             Client = new Client(ClientHandleMessage);
 
             this.Title += " (Client)";
@@ -959,6 +996,18 @@ namespace Cards
             }
 
 #endif
+            if (sender != null)
+            {
+                _savedSettings = new Settings()
+                {
+                    LastUsedName = PlayerName,
+                    LastUsedServer = ServerAddress,
+                    Rotation = _savedSettings?.Rotation ?? PlayerRotationState.All
+                };
+
+                Settings.Save(_savedSettings);
+            }
+
 
             if (!int.TryParse(ServerAddress, out int port))
             {
@@ -1399,6 +1448,16 @@ namespace Cards
                 var serializedStateMessage = JsonConvert.SerializeObject(gameStateMessage);
 
                 this.Server.PushToListeners(serializedStateMessage);
+            }
+        }
+
+        private void ToggleRotation_Click(object sender, RoutedEventArgs e)
+        {
+            RotationState = (PlayerRotationState)(((int)RotationState + 1) % 3);
+            if (_savedSettings != null)
+            {
+                _savedSettings.Rotation = RotationState;
+                Settings.Save(_savedSettings);
             }
         }
     }
