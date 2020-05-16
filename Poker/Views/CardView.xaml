@@ -1,0 +1,66 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:local="clr-namespace:Solitare.Views">
+
+    <LinearGradientBrush x:Key="EdgeBrush">
+        <GradientStop Offset="0"
+                            Color="#999999" />
+        <GradientStop Offset="1"
+                            Color="#333333" />
+    </LinearGradientBrush>
+
+    <!-- Data template for a card. -->
+    <DataTemplate x:Key="CardTemplate">
+        <Border ToolTip="{Binding ToolTip}"
+                        Margin="3"
+                        CornerRadius="5"
+                        BorderBrush="White"
+                        BorderThickness="1"
+                        Background="White"
+                        Tag="{Binding}">
+            <Grid   
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center" Margin="3">
+                <Image Name="back"
+                               Source="{Binding BackImage}"
+                               Stretch="Fill" />
+                <Image Name="front"
+                               Source="{Binding FrontImage}"
+                               Visibility="Hidden" />
+                <Rectangle Name="highlight"
+                                   Margin="-2"
+                                   Fill="Yellow"
+                                   Opacity="0.6"
+                                   Visibility="Hidden"/>
+            </Grid>
+        </Border>
+        <DataTemplate.Triggers>
+            <DataTrigger Binding="{Binding IsFaceUp}"
+                                 Value="True">
+                <Setter TargetName="front"
+                                Property="Visibility"
+                                Value="Visible" />
+                <Setter TargetName="back"
+                                Property="Visibility"
+                                Value="Hidden" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding IsHighlight}"
+                                 Value="True">
+                <Setter TargetName="highlight"
+                                Property="Visibility"
+                                Value="Visible" />
+            </DataTrigger>
+        </DataTemplate.Triggers>
+    </DataTemplate>
+
+    <!-- Data template for a stack of cards. -->
+    <DataTemplate x:Key="StackTemplate">
+        <ItemsControl ItemsSource="{Binding}"
+                                ItemTemplate="{StaticResource CardTemplate}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Top"
+                                Margin="5 0" />
+    </DataTemplate>
+
+
+</ResourceDictionary>
