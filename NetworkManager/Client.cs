@@ -1,8 +1,11 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace NetworkManager
 {
@@ -40,12 +43,7 @@ namespace NetworkManager
             {
                 _sender.BeginConnect(ipe, new AsyncCallback(ConnectCallback), _sender);
 
-#if DEBUG
-                // we're running on localhost, it shouldn't take that long to connect
-                connectDone.WaitOne((int)TimeSpan.FromSeconds(5).TotalMilliseconds);
-#else
                 connectDone.WaitOne((int)TimeSpan.FromSeconds(30).TotalMilliseconds);
-#endif
 
                 return _sender.Connected;
             }
@@ -98,19 +96,9 @@ namespace NetworkManager
 
         public void Send(byte[] bytes)
         {
-            // Add our null-terminating byte if not already present
-            if (bytes[bytes.Length - 1] != (char)Constants.EOF)
-            {
-                Array.Resize(ref bytes, bytes.Length + 1);
-                bytes[bytes.Length - 1] = Constants.EOF;
-            }
-
             // Begin sending the data to the remote device.  
-            if (_sender.Connected)
-            {
-                _sender.BeginSend(bytes, 0, bytes.Length, SocketFlags.None,
-                    new AsyncCallback(SendCallback), _sender);
-            }
+            _sender.BeginSend(bytes, 0, bytes.Length, SocketFlags.None,
+                new AsyncCallback(SendCallback), _sender);
         }
 
         private static void SendCallback(IAsyncResult ar)
@@ -168,12 +156,9 @@ namespace NetworkManager
                         // Store all except EOF
                         state.sb.Append(Encoding.ASCII.GetString(state.buffer, 0, bytesRead - 1));
 
-                        // End of our message(s); split to handle, then clear
+                        // End of our message; handle it and clear
                         string content = state.sb.ToString();
-                        foreach (var message in content.Split((char)Constants.EOF))
-                        {
-                            _onMessageComplete(message);
-                        }
+                        _onMessageComplete(content);
                         state.sb.Clear();
                     }
                     else
@@ -190,11 +175,6 @@ namespace NetworkManager
                 {
                     client.Close();
                 }
-            }
-            catch (SocketException e)
-            {
-                // Maybe server closed
-                Console.WriteLine(e.ToString());
             }
             catch (Exception e)
             {

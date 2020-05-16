@@ -14,15 +14,13 @@ namespace NetworkManager
         Socket _listener;
         ManualResetEvent allDone;
         static Func<string, bool> _onMessageComplete;
-        static Func<string> _getAckMessage;
-        static Dictionary<IntPtr, Socket> _clients;
+        static Func<string> _getResponseString;
 
-        public Server(Func<string, bool> onMessageComplete, Func<string> getAckMessage)
+        public Server(Func<string, bool> onMessageComplete, Func<string> getResponseString)
         {
-            _clients = new Dictionary<IntPtr, Socket>();
             allDone = new ManualResetEvent(false);
             _onMessageComplete = onMessageComplete;
-            _getAckMessage = getAckMessage;
+            _getResponseString = getResponseString;
         }
 
         private static string GetLocalIPAddress()
@@ -105,27 +103,13 @@ namespace NetworkManager
 
                         // End of our message; handle it and clear
                         string content = state.sb.ToString();
-
-                        // Maintain this connected socket
-                        if (!_clients.ContainsKey(handler.Handle))
-                        {
-                            _clients[handler.Handle] = handler;
-                        }
-
                         if (_onMessageComplete(content))
                         {
                             state.sb.Clear();
 
-                            var res = _getAckMessage();
+                            var res = _getResponseString();
+
                             byte[] bytes = Encoding.ASCII.GetBytes(res + (char)Constants.EOF);
-
-                            // Add our null-terminating byte if not already present
-                            if (bytes[bytes.Length - 1] != (char)Constants.EOF)
-                            {
-                                Array.Resize(ref bytes, bytes.Length + 1);
-                                bytes[bytes.Length - 1] = Constants.EOF;
-                            }
-
                             state.WorkSocket.Send(bytes);
                         }
                     }
@@ -145,38 +129,6 @@ namespace NetworkManager
             }
 
             catch { }
-        }
-
-        public void PushToListeners(string message)
-        {
-            byte[] bytes = Encoding.ASCII.GetBytes(message);
-            SendToListeners(bytes);
-        }
-
-        public void SendToListeners(byte[] bytes)
-        {
-            // Add our null-terminating byte if not already present
-            if (bytes[bytes.Length - 1] != (char)Constants.EOF)
-            {
-                Array.Resize(ref bytes, bytes.Length + 1);
-                bytes[bytes.Length - 1] = Constants.EOF;
-            }
-
-            // Begin sending the data to the remote device.  
-            foreach (var socket in _clients.Values)
-            {
-                if (socket.Connected)
-                {
-                    try
-                    {
-                        socket.Send(bytes);
-                    }
-                    catch
-                    {
-
-                    }
-                }
-            }
         }
 
         public void Dispose()
