@@ -11,9 +11,15 @@
     <convert:BoolInvConverter x:Key="BoolInvConverter"/>
     <convert:BoolToBlurRadConverter x:Key="BoolToBlurRadConverter"/>
     <convert:StringFormatterConverter x:Key="StringFormatterConverter"/>
+    <convert:ObjectToNullConverter x:Key="ObjectToNullConverter"/>
+
+    <RadialGradientBrush x:Key="TurnBrush" GradientOrigin="0.5,0.5" Center="0.5,0.5">
+        <GradientStop Offset="0" Color="#99FFFFFF"/>
+        <GradientStop Offset="1.2" Color="#22FFFFFF"/>
+    </RadialGradientBrush>
 
     <DataTemplate x:Key="PlayerTemplate">
-        <Border Margin="1" BorderThickness="2" BorderBrush="DarkSlateGray">
+        <Border Margin="1" BorderThickness="2" BorderBrush="DarkSlateGray" Background="{Binding IsMyTurn, Converter={StaticResource ObjectToNullConverter}, ConverterParameter={StaticResource TurnBrush}}">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="1*"/>
@@ -58,12 +64,6 @@
                     </Grid>
                 </Grid>
                 <Grid Grid.Row="2" Grid.ColumnSpan="4" Grid.RowSpan="4">
-                    <Grid.Effect>
-                        <DropShadowEffect ShadowDepth="0"
-                          Color="White"
-                          Opacity="1"
-                          BlurRadius="{Binding Path=IsMyTurn, Converter={StaticResource BoolToBlurRadConverter}}"/>
-                    </Grid.Effect>
                     <Grid.RowDefinitions>
                         <RowDefinition/>
                         <RowDefinition/>

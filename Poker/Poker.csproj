@@ -62,6 +62,7 @@
     <Compile Include="App.xaml.cs">
       <DependentUpon>App.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Converters\ObjectToNullConverter.cs" />
     <Compile Include="Converters\RotationConverter.cs" />
     <Compile Include="Converters\StringFormatterConverter.cs" />
     <Compile Include="Converters\BoolToBlurRadConverter.cs" />
@@ -71,6 +72,7 @@
     <Compile Include="Game\Bet.cs" />
     <Compile Include="Game\Card.cs" />
     <Compile Include="Game\Chip.cs" />
+    <Compile Include="Utilities.cs" />
     <Compile Include="Logger.cs" />
     <Compile Include="Network\GameState.cs" />
     <Compile Include="Game\Player.cs" />

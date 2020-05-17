@@ -20,7 +20,7 @@ namespace Cards
          TODO:
          
          DONE * Declaring winner doesn't give pending pot?
-         * Raising doesn't set to-bet well
+         * Raising doesn't set Turns well
          * Blind indicators
          DONE * Server folding doesn't AdvancePlayer
          DONE * Server reseting bet creates money
@@ -29,11 +29,11 @@ namespace Cards
          * Ensure everyone is added up before letting a deal go through
          DONE * Client pending bets don't sync?
          * Dealer == Marque? BIGGER NOTICE EITHER WAY
-         * Background of player who's up
+         DONE * Background of player who's up
          DONE * Out of 0 still gets dealer?
          DONE * Desync pending bet from clients? when server is dealing?
-         * Night mode
-         * Undo rotations
+         * Night mode ??
+         DONE * Undo rotations
          
          
          */
@@ -92,7 +92,6 @@ namespace Cards
             "Points", typeof(string), typeof(MainWindow), new FrameworkPropertyMetadata(null));
 
         private Stack<Card> _deck;
-        private Stack<Card> _tempDeck;
 
         private static Guid MyUuid = Guid.NewGuid();
         private Client Client;
@@ -181,100 +180,9 @@ namespace Cards
 
         }
 
-        private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
-        {
-            MessageBox.Show(e.ExceptionObject.ToString(), e.ToString());
-        }
-
-        public void ResetFlop()
-        {
-            Round++;
-            LogGameState();
-            _deck = Shuffle();
-
-            DealCards();
-
-            var newFlop = new ObservableCollection<Card>();
-            // Add first facedown to represent deck
-            newFlop.Add(new Card(Suit.Club, 1, false));
-            Flop = newFlop;
-            this.Pot = 0;
-            this.PendingPot = 0;
-        }
-
-        public void DealCards()
-        {
-            // Give first card and reset some fields
-            foreach (var player in GetAllPlayers())
-            {
-                if (player.Points == 0)
-                {
-                    player.IsOut = true;
-                }
-                else
-                {
-                    player.IsOut = false;
-                    player.IsShowingHand = false;
-
-                    player.GiveCard(_deck.Pop());
-                }
-            }
-
-            // Give second card 
-            foreach (var player in GetAllPlayers())
-            {
-                if (!player.IsOut)
-                {
-                    player.GiveCard(_deck.Pop());
-                }
-            }
-        }
-
-        public void LogGameState()
-        {
-            ServerLogger?.Log(GetCurrentGameStateAsString());
-        }
-
-        private void CommitAllBets()
-        {
-            foreach (var player in GetAllPlayers())
-            {
-                player.PlaceBet(true);
-            }
-
-            this.Pot = GetAllPlayers().Select(p => p.BetForGame).Sum();
-            this.PendingPot = 0;
-        }
-
-        public void AdvanceFlop()
-        {
-            LogGameState();
-
-            CommitAllBets();
-
-            var newFlop = Flop;
-
-            if (Flop.Count == 1)
-            {
-                // Add flop
-                newFlop.Add(_deck.Pop());
-                newFlop.Add(_deck.Pop());
-                newFlop.Add(_deck.Pop());
-            }
-            else if (Flop.Count <= 5)
-            {
-                // Add turn or river
-                newFlop.Add(_deck.Pop());
-            }
-
-            Flop = newFlop;
-        }
-
-
         #endregion
 
         #region Public Properties
-
 
         public ObservableCollection<Card> Flop
         {
@@ -480,46 +388,9 @@ namespace Cards
             }
         }
 
-
         #endregion
 
-        #region Methods
-
-        public void AdvanceDealer()
-        {
-            var toSet = false;
-            var didSet = false;
-
-            foreach (var player in GetAllPlayers())
-            {
-                if (toSet && !player.IsOut)
-                {
-                    player.IsDealer = true;
-                    didSet = true;
-                    break;
-                }
-                else if (player.IsDealer)
-                {
-                    player.IsDealer = false;
-                    toSet = true;
-                }
-            }
-
-            if (!didSet && toSet)
-            {
-                foreach (var player in GetAllPlayers())
-                {
-                    if (!player.IsOut)
-                    {
-                        player.IsDealer = true;
-                        break;
-                    }
-                }
-            }
-
-            // If we are the server, this will push updated state to cilents
-            SendUpdatedGameState();
-        }
+        #region PlayerMethods
 
         public void UpdatePlayer(Player player)
         {
@@ -570,252 +441,7 @@ namespace Cards
             return allPlayers.Where(pl => !pl.IsFake || includeFakes);
         }
 
-        public void PlayerJoin(string name, Guid uuid)
-        {
-
-            foreach (var player in GetAllPlayers(true))
-            {
-                if (player.IsFake)
-                {
-                    var newPlayer = new Player(name, player.Index, uuid);
-                    UpdatePlayer(newPlayer);
-                    break;
-                }
-            }
-        }
-
-        public void PlayerAct(MessageType type, Guid uuid)
-        {
-            var player = GetPlayer(uuid);
-            if (player.IsMyTurn || type == MessageType.ShowHand)
-            {
-                switch (type)
-                {
-                    case MessageType.Fold:
-                        player.IsOut = true;
-                        AdvanceTurn();
-                        break;
-                    case MessageType.ShowHand:
-                        player.ShowHand();
-                        break;
-                }
-            }
-        }
-
-        public void HandleDeclareWinner(Guid sender, string winnerUuidStr)
-            {
-            if (Guid.TryParse(winnerUuidStr, out Guid winnerUuid))
-            {
-                var player = GetPlayer(sender);
-                if (player.IsDealer)
-                {
-                    var winner = GetPlayer(winnerUuid);
-                    if (!winner.IsFake)
-                    {
-                        CommitAllBets();
-                        winner.Points += this.Pot;
-                        PassDealer_Click(null, null);
-                    }
-                }
-            }
-        }
-
-        public void PlayerBet(string bet, Guid uuid)
-        {
-            if (int.TryParse(bet, out int betInt))
-            {
-                var player = GetPlayer(uuid);
-
-                if (player.IsMyTurn)
-                {
-                    if (betInt > PendingPot)
-                    {
-                        PendingPot = betInt;
-                    }
-                    else if (betInt < PendingPot && player.Points > betInt)
-                    {
-                        // If we're trying to bet lower than pending bet and we have more points to bet with, don't allow change
-                        return;
-                    }
-
-                    var dif = betInt - player.BetForRound;
-                    player.BetForRound = betInt;
-                    player.Points -= dif;
-                    AdvanceTurn();
-                }
-            }
-        }
-
-        public Stack<Card> Shuffle()
-        {
-            List<Card> unshuffledDeck = new List<Card>();
-
-            // create list of the cards unshuffled.
-            for (int i = 0; i < 52; i++)
-            {
-                // You can cast an int to an enum.  Unless you explictly specify the enum values,
-                // the first enum value is 0, the next is 1, and so forth.
-                Suit suit = (Suit)(i / 13);
-
-                // '%' is the modulus operator.  Gives you the remainder of the division.
-                int rank = (i % 13) + 1;
-
-                unshuffledDeck.Add(new Card(suit, rank, true));
-            }
-
-            // randomly shuffle them into a Stack<Card> that will be the deck.
-            Stack<Card> deck = new Stack<Card>();
-            _tempDeck = new Stack<Card>();
-            Random randcard = new Random();
-            for (int i = 0; i < 52; i++)
-            {
-                // randomly pick a card from what remains in the list.
-                int cardIndex = randcard.Next(unshuffledDeck.Count);
-
-                // add it to the deck and remove it from the unshuffled list
-                deck.Push(unshuffledDeck[cardIndex]);
-                unshuffledDeck.RemoveAt(cardIndex);
-            }
-
-            return deck;
-        }
-
-
-        private void OnAddCardClicked(object sender, RoutedEventArgs e)
-        {
-
-        }
-
         #endregion
-
-        private void ToggleDeal(object sender, RoutedEventArgs e)
-        {
-
-        }
-
-        private void NewDeal(object sender, RoutedEventArgs e)
-        {
-            foreach(var player in GetAllPlayers())
-            {
-                player.IsDealer = false;
-                player.IsMyTurn = false;
-                player.Points = 500;
-                player.BetForRound = 0;
-                player.BetForGame = 0;
-            }
-
-            FirstPlayer.IsDealer = true;
-            FirstPlayer.IsMyTurn = true;
-
-            ResetHand_Click(null, null);
-
-            // Pass off to small blind
-            AdvanceTurn();
-        }
-
-        private void Bet1_Click(object sender, RoutedEventArgs e)
-        {
-            if (FirstPlayer.PlacePendingBet(1, this.IsServer))
-            {
-            }
-        }
-
-        private void Bet5_Click(object sender, RoutedEventArgs e)
-        {
-            if (FirstPlayer.PlacePendingBet(5, this.IsServer))
-            {
-            }
-        }
-
-        private void Bet10_Click(object sender, RoutedEventArgs e)
-        {
-            if (FirstPlayer.PlacePendingBet(10, this.IsServer))
-            {
-            }
-        }
-
-        private void Bet25_Click(object sender, RoutedEventArgs e)
-        {
-            if (FirstPlayer.PlacePendingBet(25, this.IsServer))
-            {
-            }
-        }
-
-        private void ResetBet_Click(object sender, RoutedEventArgs e)
-        {
-            if (FirstPlayer.IsMyTurn)
-            {
-                if (this.IsServer)
-                {
-                    FirstPlayer.Points += FirstPlayer.BetForRound;
-                }
-
-                FirstPlayer.BetForRound = 0;
-
-                // If we are the server, this will push updated state to cilents
-                SendUpdatedGameState();
-            }
-        }
-
-        private void AllIn_Click(object sender, RoutedEventArgs e)
-        {
-            if (FirstPlayer.PlacePendingBet(FirstPlayer.Points, this.IsServer))
-            {
-                PlaceBet_Click(null, null);
-            }
-        }
-
-        private void Check_Click(object sender, RoutedEventArgs e)
-        {
-            if (FirstPlayer.PlacePendingBet(this.PendingPot - FirstPlayer.BetForRound, this.IsServer))
-            {
-                PlaceBet_Click(null, null);
-            }
-        }
-
-        private void AdvanceTurn()
-        {
-            Pot = GetAllPlayers().Select(p => p.BetForGame).Sum();
-
-            var toSet = false;
-            var didSet = false;
-
-            foreach (var player in GetAllPlayers())
-            {
-                if (toSet && !player.IsOut)
-                {
-                    player.IsMyTurn = true;
-                    didSet = true;
-                    break;
-                }
-                else if (player.IsMyTurn)
-                {
-                    player.IsMyTurn = false;
-                    toSet = true;
-                }
-            }
-
-            if (!didSet && toSet)
-            {
-                foreach (var player in GetAllPlayers())
-                {
-                    if (!player.IsOut)
-                    {
-                        player.IsMyTurn = true;
-                        break;
-                    }
-                }
-            }
-
-            // If we are the server, this will push updated state to cilents
-            SendUpdatedGameState();
-        }
-
-        private void PassDealer_Click(object sender, RoutedEventArgs e)
-        {
-            ResetHand_Click(null, null);
-            AdvanceDealer();
-        }
 
         private void JoinClick(object sender, RoutedEventArgs e)
         {
@@ -857,6 +483,159 @@ namespace Cards
             FirstPlayer = new Player(PlayerName, 1, MyUuid, true);
             InGame = true;
         }
+
+        private void HostClick(object sender, RoutedEventArgs e)
+        {
+#if DEBUG
+            // handle default value of 127.0.0.0:1000 for easy testing
+            if (ServerAddress.Contains(':'))
+            {
+                ServerAddress = ServerAddress.Split(':')[1];
+            }
+
+#endif
+            if (sender != null)
+            {
+                _savedSettings = new Settings()
+                {
+                    LastUsedName = PlayerName,
+                    LastUsedServer = ServerAddress,
+                    Rotation = _savedSettings?.Rotation ?? PlayerRotationState.All
+                };
+
+                Settings.Save(_savedSettings);
+            }
+
+
+            if (!int.TryParse(ServerAddress, out int port))
+            {
+                return;
+            }
+
+            this.Title += $" (Host : {port})";
+
+            ServerLogger = new Logger("out.log");
+
+            Task.Factory.StartNew(() =>
+            {
+                Server = new Server(ServerHandleMessage, GetAcknowledgementResponseAsString);
+                Server.StartListening(port);
+            });
+
+            FirstPlayer = new Player(PlayerName + " (Host)", 1, MyUuid, true);
+            InGame = true;
+            IsServer = true;
+        }
+
+        private void root_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!this.IsServer && this.InGame)
+                {
+                    var newMessage = new Message() { Type = MessageType.Leave, Value = PlayerName, Uuid = MyUuid };
+                    var srl = JsonConvert.SerializeObject(newMessage);
+
+                    Client.Send(srl);
+                    Console.WriteLine("Leaving");
+                }
+            }));
+        }
+
+        private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            MessageBox.Show(e.ExceptionObject.ToString(), e.ToString());
+        }
+
+        public void LogGameState()
+        {
+            ServerLogger?.Log(GetCurrentGameStateAsString());
+        }
+
+        #region ConfigMethods
+
+        private void SetBet(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var idx = int.Parse(PlayerIdx);
+                var points = int.Parse(Points);
+
+                var player = GetPlayer(idx);
+                if (player != default(Player))
+                {
+                    player.BetForGame = points;
+                }
+
+                this.Pot = GetAllPlayers().Select(p => p.BetForGame).Sum();
+                IsAdmining = false;
+                InGame = true;
+                SendUpdatedGameState();
+            }
+            catch { }
+        }
+
+        private void SetPendingBet(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var idx = int.Parse(PlayerIdx);
+                var points = int.Parse(Points);
+
+                var player = GetPlayer(idx);
+                if (player != default(Player))
+                {
+                    player.BetForRound = points;
+                }
+
+                if (points > this.PendingPot)
+                {
+                    this.PendingPot = points;
+                }
+
+                IsAdmining = false;
+                InGame = true;
+                SendUpdatedGameState();
+            }
+            catch { }
+        }
+
+        private void Config(object sender, RoutedEventArgs e)
+        {
+            IsAdmining = true;
+            InGame = false;
+        }
+
+        private void SetPoints(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var idx = int.Parse(PlayerIdx);
+                var points = int.Parse(Points);
+
+                var player = GetPlayer(idx);
+                if (player != default(Player))
+                {
+                    player.Points = points;
+                    UpdatePlayer(player);
+                }
+
+                IsAdmining = false;
+                InGame = true;
+                SendUpdatedGameState();
+            }
+            catch { }
+        }
+
+        private void EndAdmin(object sender, RoutedEventArgs e)
+        {
+            IsAdmining = false;
+            InGame = true;
+        }
+
+        #endregion
+        
+        #region Communication
 
         bool ClientHandleMessage(string messageStr)
         {
@@ -939,7 +718,8 @@ namespace Cards
             {
                 if (this.IsServer)
                 {
-                    try {
+                    try
+                    {
                         var message = JsonConvert.DeserializeObject<Message>(messageStr);
 
                         switch (message.Type)
@@ -984,163 +764,6 @@ namespace Cards
                 return true;
 
             }));
-        }
-
-        private void HostClick(object sender, RoutedEventArgs e)
-        {
-#if DEBUG
-            // handle default value of 127.0.0.0:1000 for easy testing
-            if (ServerAddress.Contains(':'))
-            {
-                ServerAddress = ServerAddress.Split(':')[1];
-            }
-
-#endif
-            if (sender != null)
-            {
-                _savedSettings = new Settings()
-                {
-                    LastUsedName = PlayerName,
-                    LastUsedServer = ServerAddress,
-                    Rotation = _savedSettings?.Rotation ?? PlayerRotationState.All
-                };
-
-                Settings.Save(_savedSettings);
-            }
-
-
-            if (!int.TryParse(ServerAddress, out int port))
-            {
-                return;
-            }
-
-            this.Title += $" (Host : {port})";
-
-            ServerLogger = new Logger("out.log");
-
-            Task.Factory.StartNew(() =>
-            {
-                Server = new Server(ServerHandleMessage, GetAcknowledgementResponseAsString);
-                Server.StartListening(port);
-            });
-
-            FirstPlayer = new Player(PlayerName + " (Host)", 1, MyUuid, true);
-            InGame = true;
-            IsServer = true;
-        }
-
-        private void DealClick(object sender, RoutedEventArgs e)
-        {
-            if (FirstPlayer.IsDealer)
-            {
-                if (this.IsServer)
-                {
-                    AdvanceFlop();
-                    SendUpdatedGameState();
-                }
-                else
-                {
-                    Dispatcher.BeginInvoke(new Action(() =>
-                    {
-                        var newMessage = new Message() { Type = MessageType.AdvanceFlop, Value = string.Empty, Uuid = MyUuid };
-                        var srl = JsonConvert.SerializeObject(newMessage);
-
-                        Client.Send(srl);
-                        Console.WriteLine("Flop");
-                    }));
-                }
-            }
-        }
-
-        private void Config(object sender, RoutedEventArgs e)
-        {
-            IsAdmining = true;
-            InGame = false;
-        }
-
-        private void SetPoints(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                var idx = int.Parse(PlayerIdx);
-                var points = int.Parse(Points);
-
-                var player = GetPlayer(idx);
-                if (player != default(Player))
-                {
-                    player.Points = points;
-                    UpdatePlayer(player);
-                }
-
-                IsAdmining = false;
-                InGame = true;
-                SendUpdatedGameState();
-            }
-            catch { }
-        }
-
-        private void EndAdmin(object sender, RoutedEventArgs e)
-        {
-            IsAdmining = false;
-            InGame = true;
-        }
-
-        private void Fold_Click(object sender, RoutedEventArgs e)
-        {
-            if (FirstPlayer.IsMyTurn)
-            {
-                if (this.IsServer)
-                {
-                    FirstPlayer.IsOut = true;
-                    AdvanceTurn();
-                }
-                else
-                {
-                    // If it's still our turn, the server will tell us so on next update
-                    FirstPlayer.IsMyTurn = false;
-
-                    Dispatcher.BeginInvoke(new Action(() =>
-                    {
-                        var newMessage = new Message() { Type = MessageType.Fold, Value = string.Empty, Uuid = MyUuid };
-                        var srl = JsonConvert.SerializeObject(newMessage);
-
-                        Client.Send(srl);
-                        Console.WriteLine("Fold");
-                    }));
-                }
-            }
-        }
-
-        private void ResetHand_Click(object sender, RoutedEventArgs e)
-        {
-            foreach (var player in GetAllPlayers())
-            {
-                player.BetForRound = 0;
-                player.BetForGame = 0;
-                player.ResetHand();
-            }
-
-            ResetFlop();
-        }
-
-        private void ShowHand_Click(object sender, RoutedEventArgs e)
-        {
-            if (this.IsServer)
-            {
-                FirstPlayer.IsShowingHand = true;
-                SendUpdatedGameState();
-            }
-            else
-            {
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    var newMessage = new Message() { Type = MessageType.ShowHand, Value = string.Empty, Uuid = MyUuid };
-                    var srl = JsonConvert.SerializeObject(newMessage);
-
-                    Client.Send(srl);
-                    Console.WriteLine("Show");
-                }));
-            }
         }
 
         private string GetAcknowledgementResponseAsString()
@@ -1190,66 +813,303 @@ namespace Cards
             }
         }
 
-        private void Refresh_Click(object sender, RoutedEventArgs e)
-        {
-            if (Client != null)
-            {
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    var newMessage = new Message() { Type = MessageType.PollState, Value = PlayerName, Uuid = MyUuid };
-                    var srl = JsonConvert.SerializeObject(newMessage);
 
-                    Client.Send(srl);
-                    Console.WriteLine("Poll state");
-                }));
+        private void SendUpdatedGameState()
+        {
+            if (this.IsServer)
+            {
+                var gameStateMessage = new ServerMessage()
+                {
+                    Type = ServerMessageType.Update,
+                    Value = GetCurrentGameStateAsString()
+                };
+
+                var serializedStateMessage = JsonConvert.SerializeObject(gameStateMessage);
+
+                this.Server.PushToListeners(serializedStateMessage);
             }
         }
 
-        private void root_Closing(object sender, System.ComponentModel.CancelEventArgs e)
-        {
-            Dispatcher.BeginInvoke(new Action(() =>
-            {
-                if (!this.IsServer && this.InGame)
-                {
-                    var newMessage = new Message() { Type = MessageType.Leave, Value = PlayerName, Uuid = MyUuid };
-                    var srl = JsonConvert.SerializeObject(newMessage);
+        #endregion
 
-                    Client.Send(srl);
-                    Console.WriteLine("Leaving");
+        #region ServerCallbacks
+
+        public void PlayerJoin(string name, Guid uuid)
+        {
+
+            foreach (var player in GetAllPlayers(true))
+            {
+                if (player.IsFake)
+                {
+                    var newPlayer = new Player(name, player.Index, uuid);
+                    UpdatePlayer(newPlayer);
+                    break;
                 }
-            }));
+            }
         }
 
-        private void PlaceBet_Click(object sender, RoutedEventArgs e)
+        public void PlayerAct(MessageType type, Guid uuid)
         {
-            if (FirstPlayer.CanPlaceBet() && (FirstPlayer.BetForRound >= PendingPot) || FirstPlayer.Points < PendingPot)
+            var player = GetPlayer(uuid);
+            if (player.IsMyTurn || type == MessageType.ShowHand)
             {
-                // If we're the server, try to place our bet
-                var newPending = FirstPlayer.BetForRound;
-                if (this.IsServer)// && FirstPlayer.PlaceBet())
+                switch (type)
                 {
-                    if (newPending > PendingPot)
+                    case MessageType.Fold:
+                        player.IsOut = true;
+                        AdvanceTurn();
+                        break;
+                    case MessageType.ShowHand:
+                        player.ShowHand();
+                        break;
+                }
+            }
+        }
+
+        public void HandleDeclareWinner(Guid sender, string winnerUuidStr)
+        {
+            if (Guid.TryParse(winnerUuidStr, out Guid winnerUuid))
+            {
+                var player = GetPlayer(sender);
+                if (player.IsDealer)
+                {
+                    var winner = GetPlayer(winnerUuid);
+                    if (!winner.IsFake)
                     {
-                        PendingPot = newPending;
+                        CommitAllBets();
+                        winner.Points += this.Pot;
+                        PassDealer_Click(null, null);
+                    }
+                }
+            }
+        }
+
+        public void PlayerBet(string bet, Guid uuid)
+        {
+            if (int.TryParse(bet, out int betInt))
+            {
+                var player = GetPlayer(uuid);
+
+                if (player.IsMyTurn)
+                {
+                    if (betInt > PendingPot)
+                    {
+                        PendingPot = betInt;
+                    }
+                    else if (betInt < PendingPot && player.Points > betInt)
+                    {
+                        // If we're trying to bet lower than pending bet and we have more points to bet with, don't allow change
+                        return;
                     }
 
+                    var dif = betInt - player.BetForRound;
+                    player.BetForRound = betInt;
+                    player.Points -= dif;
                     AdvanceTurn();
+                }
+            }
+        }
 
-                    //PlayerBet(FirstPlayer.BetForRound.ToString(), MyUuid);
+        #endregion
+
+        #region GameStateModifiers
+
+        public int AdvanceDealer()
+        {
+            var toSet = false;
+            var didSet = false;
+            var newDealerIndex = -1;
+
+            foreach (var player in GetAllPlayers())
+            {
+                if (toSet && !player.IsOut)
+                {
+                    player.IsDealer = true;
+                    didSet = true;
+                    newDealerIndex = player.Index;
+                    break;
+                }
+                else if (player.IsDealer)
+                {
+                    player.IsDealer = false;
+                    toSet = true;
+                }
+            }
+
+            if (!didSet && toSet)
+            {
+                foreach (var player in GetAllPlayers())
+                {
+                    if (!player.IsOut)
+                    {
+                        player.IsDealer = true;
+                        newDealerIndex = player.Index;
+                        break;
+                    }
+                }
+            }
+
+            // If we are the server, this will push updated state to cilents
+            SendUpdatedGameState();
+            return newDealerIndex;
+        }
+
+        private void NewDeal(object sender, RoutedEventArgs e)
+        {
+            foreach (var player in GetAllPlayers())
+            {
+                player.IsDealer = false;
+                player.IsMyTurn = false;
+                player.Points = 500;
+                player.BetForRound = 0;
+                player.BetForGame = 0;
+            }
+
+            FirstPlayer.IsDealer = true;
+            FirstPlayer.IsMyTurn = true;
+
+            ResetHand_Click(null, null);
+
+            // Pass off to small blind
+            AdvanceTurn();
+        }
+
+        // Advance the turn to the provided index (or next play) if provided, or simply the next player 
+        private void AdvanceTurn(int index = -1)
+        {
+            Pot = GetAllPlayers().Select(p => p.BetForGame).Sum();
+
+            var toSet = false;
+            var didSet = false;
+
+            foreach (var player in GetAllPlayers())
+            {
+                if (toSet && !player.IsOut)
+                {
+                    player.IsMyTurn = true;
+                    didSet = true;
+                    break;
+                }
+                else if (player.IsMyTurn)
+                {
+                    player.IsMyTurn = false;
+                    toSet = true;
+                }
+            }
+
+            if (!didSet && toSet)
+            {
+                foreach (var player in GetAllPlayers())
+                {
+                    if (!player.IsOut)
+                    {
+                        player.IsMyTurn = true;
+                        break;
+                    }
+                }
+            }
+
+            // If we are the server, this will push updated state to cilents
+            SendUpdatedGameState();
+        }
+
+        private void CommitAllBets()
+        {
+            foreach (var player in GetAllPlayers())
+            {
+                player.PlaceBet(true);
+            }
+
+            this.Pot = GetAllPlayers().Select(p => p.BetForGame).Sum();
+            this.PendingPot = 0;
+        }
+
+        public void ResetFlop()
+        {
+            Round++;
+            LogGameState();
+            _deck = Utilities.Shuffle();
+
+            DealCards();
+
+            var newFlop = new ObservableCollection<Card>();
+            // Add first facedown to represent deck
+            newFlop.Add(new Card(Suit.Club, 1, false));
+            Flop = newFlop;
+            this.Pot = 0;
+            this.PendingPot = 0;
+        }
+
+        public void DealCards()
+        {
+            // Give first card and reset some fields
+            foreach (var player in GetAllPlayers())
+            {
+                if (player.Points == 0)
+                {
+                    player.IsOut = true;
                 }
                 else
                 {
-                    // If it's still our turn, the server will tell us so on next update
-                    FirstPlayer.IsMyTurn = false;
+                    player.IsOut = false;
+                    player.IsShowingHand = false;
 
-                    // Else send the pending bet
+                    player.GiveCard(_deck.Pop());
+                }
+            }
+
+            // Give second card 
+            foreach (var player in GetAllPlayers())
+            {
+                if (!player.IsOut)
+                {
+                    player.GiveCard(_deck.Pop());
+                }
+            }
+        }
+
+        public void AdvanceFlop()
+        {
+            LogGameState();
+
+            CommitAllBets();
+
+            var newFlop = Flop;
+
+            if (Flop.Count == 1)
+            {
+                // Add flop
+                newFlop.Add(_deck.Pop());
+                newFlop.Add(_deck.Pop());
+                newFlop.Add(_deck.Pop());
+            }
+            else if (Flop.Count <= 5)
+            {
+                // Add turn or river
+                newFlop.Add(_deck.Pop());
+            }
+
+            Flop = newFlop;
+        }
+
+        private void DealClick(object sender, RoutedEventArgs e)
+        {
+            if (FirstPlayer.IsDealer)
+            {
+                if (this.IsServer)
+                {
+                    AdvanceFlop();
+                    SendUpdatedGameState();
+                }
+                else
+                {
                     Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        var newMessage = new Message() { Type = MessageType.Bet, Value = FirstPlayer.BetForRound.ToString(), Uuid = MyUuid };
+                        var newMessage = new Message() { Type = MessageType.AdvanceFlop, Value = string.Empty, Uuid = MyUuid };
                         var srl = JsonConvert.SerializeObject(newMessage);
 
                         Client.Send(srl);
-                        Console.WriteLine("Bet");
+                        Console.WriteLine("Flop");
                     }));
                 }
             }
@@ -1381,73 +1241,191 @@ namespace Cards
             }
         }
 
+        #endregion
+
+        #region ButtonCallbacks
+
+        private void Bet1_Click(object sender, RoutedEventArgs e)
+        {
+            if (FirstPlayer.PlacePendingBet(1, this.IsServer))
+            {
+            }
+        }
+
+        private void Bet5_Click(object sender, RoutedEventArgs e)
+        {
+            if (FirstPlayer.PlacePendingBet(5, this.IsServer))
+            {
+            }
+        }
+
+        private void Bet10_Click(object sender, RoutedEventArgs e)
+        {
+            if (FirstPlayer.PlacePendingBet(10, this.IsServer))
+            {
+            }
+        }
+
+        private void Bet25_Click(object sender, RoutedEventArgs e)
+        {
+            if (FirstPlayer.PlacePendingBet(25, this.IsServer))
+            {
+            }
+        }
+
+        private void ResetBet_Click(object sender, RoutedEventArgs e)
+        {
+            if (FirstPlayer.IsMyTurn)
+            {
+                if (this.IsServer)
+                {
+                    FirstPlayer.Points += FirstPlayer.BetForRound;
+                }
+
+                FirstPlayer.BetForRound = 0;
+
+                // If we are the server, this will push updated state to cilents
+                SendUpdatedGameState();
+            }
+        }
+
+        private void AllIn_Click(object sender, RoutedEventArgs e)
+        {
+            if (FirstPlayer.PlacePendingBet(FirstPlayer.Points, this.IsServer))
+            {
+                PlaceBet_Click(null, null);
+            }
+        }
+
+        private void Check_Click(object sender, RoutedEventArgs e)
+        {
+            if (FirstPlayer.PlacePendingBet(this.PendingPot - FirstPlayer.BetForRound, this.IsServer))
+            {
+                PlaceBet_Click(null, null);
+            }
+        }
+
+        private void PassDealer_Click(object sender, RoutedEventArgs e)
+        {
+            ResetHand_Click(null, null);
+            var dealerIdx = AdvanceDealer();
+            var playerCount = GetAllPlayers().Where(p => !p.IsFake).Count();
+            AdvanceTurn((dealerIdx + 1) % playerCount); // WIP
+        }
+
+        private void Fold_Click(object sender, RoutedEventArgs e)
+        {
+            if (FirstPlayer.IsMyTurn)
+            {
+                if (this.IsServer)
+                {
+                    FirstPlayer.IsOut = true;
+                    AdvanceTurn();
+                }
+                else
+                {
+                    // If it's still our turn, the server will tell us so on next update
+                    FirstPlayer.IsMyTurn = false;
+
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        var newMessage = new Message() { Type = MessageType.Fold, Value = string.Empty, Uuid = MyUuid };
+                        var srl = JsonConvert.SerializeObject(newMessage);
+
+                        Client.Send(srl);
+                        Console.WriteLine("Fold");
+                    }));
+                }
+            }
+        }
+
+        private void ResetHand_Click(object sender, RoutedEventArgs e)
+        {
+            foreach (var player in GetAllPlayers())
+            {
+                player.BetForRound = 0;
+                player.BetForGame = 0;
+                player.ResetHand();
+            }
+
+            ResetFlop();
+        }
+
+        private void ShowHand_Click(object sender, RoutedEventArgs e)
+        {
+            if (this.IsServer)
+            {
+                FirstPlayer.IsShowingHand = true;
+                SendUpdatedGameState();
+            }
+            else
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    var newMessage = new Message() { Type = MessageType.ShowHand, Value = string.Empty, Uuid = MyUuid };
+                    var srl = JsonConvert.SerializeObject(newMessage);
+
+                    Client.Send(srl);
+                    Console.WriteLine("Show");
+                }));
+            }
+        }
+
+        private void Refresh_Click(object sender, RoutedEventArgs e)
+        {
+            if (Client != null)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    var newMessage = new Message() { Type = MessageType.PollState, Value = PlayerName, Uuid = MyUuid };
+                    var srl = JsonConvert.SerializeObject(newMessage);
+
+                    Client.Send(srl);
+                    Console.WriteLine("Poll state");
+                }));
+            }
+        }
+
+        private void PlaceBet_Click(object sender, RoutedEventArgs e)
+        {
+            if (FirstPlayer.CanPlaceBet() && (FirstPlayer.BetForRound >= PendingPot) || FirstPlayer.Points < PendingPot)
+            {
+                // If we're the server, try to place our bet
+                var newPending = FirstPlayer.BetForRound;
+                if (this.IsServer)// && FirstPlayer.PlaceBet())
+                {
+                    if (newPending > PendingPot)
+                    {
+                        PendingPot = newPending;
+                    }
+
+                    AdvanceTurn();
+
+                    //PlayerBet(FirstPlayer.BetForRound.ToString(), MyUuid);
+                }
+                else
+                {
+                    // If it's still our turn, the server will tell us so on next update
+                    FirstPlayer.IsMyTurn = false;
+
+                    // Else send the pending bet
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        var newMessage = new Message() { Type = MessageType.Bet, Value = FirstPlayer.BetForRound.ToString(), Uuid = MyUuid };
+                        var srl = JsonConvert.SerializeObject(newMessage);
+
+                        Client.Send(srl);
+                        Console.WriteLine("Bet");
+                    }));
+                }
+            }
+        }
+
         private void SkipPlayer_Click(object sender, RoutedEventArgs e)
         {
             if (this.IsServer)
             {
                 AdvanceTurn();
-            }
-        }
-
-        private void SetBet(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                var idx = int.Parse(PlayerIdx);
-                var points = int.Parse(Points);
-
-                var player = GetPlayer(idx);
-                if (player != default(Player))
-                {
-                    player.BetForGame = points;
-                }
-
-                this.Pot = GetAllPlayers().Select(p => p.BetForGame).Sum();
-                IsAdmining = false;
-                InGame = true;
-                SendUpdatedGameState();
-            }
-            catch { }
-        }
-
-        private void SetPendingBet(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                var idx = int.Parse(PlayerIdx);
-                var points = int.Parse(Points);
-
-                var player = GetPlayer(idx);
-                if (player != default(Player))
-                {
-                    player.BetForRound = points;
-                }
-
-                if (points > this.PendingPot)
-                {
-                    this.PendingPot = points;
-                }
-
-                IsAdmining = false;
-                InGame = true;
-                SendUpdatedGameState();
-            }
-            catch { }
-        }
-
-        private void SendUpdatedGameState()
-        {
-            if (this.IsServer)
-            {
-                var gameStateMessage = new ServerMessage()
-                {
-                    Type = ServerMessageType.Update,
-                    Value = GetCurrentGameStateAsString()
-                };
-
-                var serializedStateMessage = JsonConvert.SerializeObject(gameStateMessage);
-
-                this.Server.PushToListeners(serializedStateMessage);
             }
         }
 
@@ -1460,5 +1438,8 @@ namespace Cards
                 Settings.Save(_savedSettings);
             }
         }
+
+        #endregion
+
     }
 }
