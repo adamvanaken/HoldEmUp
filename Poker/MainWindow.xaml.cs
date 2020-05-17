@@ -14,30 +14,6 @@ namespace Cards
     using System.Timers;
     using System.Windows;
 
-    /*
-     
-         
-         TODO:
-         
-         DONE * Declaring winner doesn't give pending pot?
-         * Raising doesn't set Turns well
-         * Blind indicators
-         DONE * Server folding doesn't AdvancePlayer
-         DONE * Server reseting bet creates money
-         DONE * Can't show cards when Folded 
-         * First player should reset each round to Dealer + 1
-         * Ensure everyone is added up before letting a deal go through
-         DONE * Client pending bets don't sync?
-         * Dealer == Marque? BIGGER NOTICE EITHER WAY
-         DONE * Background of player who's up
-         DONE * Out of 0 still gets dealer?
-         DONE * Desync pending bet from clients? when server is dealing?
-         * Night mode ??
-         DONE * Undo rotations
-         
-         
-         */
-
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
