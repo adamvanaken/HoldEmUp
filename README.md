@@ -1,5 +1,7 @@
 # HoldEmUp
 
+This is NOT a Texas Hold 'Em simulator. This is an exercise in network protocols.
+
 TODO:
 
 * ~~Declaring winner doesn't give pending pot?~~
